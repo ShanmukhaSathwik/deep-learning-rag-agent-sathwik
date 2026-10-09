@@ -175,8 +175,18 @@ class LLMFactory:
         Interview talking point: Groq uses LPU (Language Processing Unit)
         inference for significantly lower latency than GPU-based inference.
         """
-        # TODO: implement using langchain_groq.ChatGroq
-        raise NotImplementedError
+        from langchain_groq import ChatGroq
+
+        if not self._settings.groq_api_key:
+            raise EnvironmentError(
+                "GROQ_API_KEY is not set. Add it to your .env file."
+            )
+
+        return ChatGroq(
+            api_key=self._settings.groq_api_key,
+            model_name=self._settings.groq_model,
+        )
+        
 
     def _create_ollama(self) -> BaseChatModel:
         """
@@ -265,8 +275,9 @@ class EmbeddingFactory:
         Interview talking point: local embeddings mean the corpus content
         never leaves the machine — important for proprietary datasets.
         """
-        # TODO: implement using langchain_community.embeddings.HuggingFaceEmbeddings
-        raise NotImplementedError
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+
+        return HuggingFaceEmbeddings(model_name=self._settings.embedding_model)
 
     def _create_openai(self):
         """

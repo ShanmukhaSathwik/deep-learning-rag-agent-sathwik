@@ -116,26 +116,38 @@ def render_ingestion_panel(
     """
     st.sidebar.header("📂 Corpus Ingestion")
 
-    # TODO: implement
-    # 1. st.sidebar.file_uploader(
-    #        "Upload study materials",
-    #        type=["pdf", "md"],
-    #        accept_multiple_files=True
-    #    )
-    #
-    # 2. "Ingest Documents" button — only enabled when files are selected
-    #
-    # 3. On button click:
-    #    a. Save uploaded files to a temp directory
-    #    b. chunker.chunk_files(file_paths)
-    #    c. store.ingest(chunks) → IngestionResult
-    #    d. Display result: st.success / st.warning / st.error
-    #       Show: "{result.ingested} chunks added, {result.skipped} duplicates skipped"
-    #    e. Refresh ingested documents list in session_state
-    #
-    # 4. Render ingested documents list below the uploader
-    #    For each document: show source name, topic, chunk count
-    #    Add a small "🗑 Remove" button per document that calls store.delete_document()
+    uploaded_files = st.sidebar.file_uploader(
+        "Upload study materials",
+        type=["pdf", "md"],
+        accept_multiple_files=True,
+    )
+
+    if st.sidebar.button("Ingest Documents", disabled=not uploaded_files):
+        upload_dir = Path("./data/uploads")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+
+        all_chunks = []
+        for uploaded_file in uploaded_files:
+            dest_path = upload_dir / uploaded_file.name
+            dest_path.write_bytes(uploaded_file.getvalue())
+            all_chunks.extend(chunker.chunk_file(dest_path))
+
+        result = store.ingest(all_chunks)
+        st.session_state["last_ingestion_result"] = result
+
+        if result.ingested > 0:
+            st.sidebar.success(
+                f"{result.ingested} chunks added, {result.skipped} duplicates skipped"
+            )
+        else:
+            st.sidebar.warning(f"No new chunks added — {result.skipped} duplicates skipped")
+
+        if result.errors:
+            st.sidebar.error(f"{len(result.errors)} chunk(s) failed — see logs")
+
+    last_result = st.session_state.get("last_ingestion_result")
+    if last_result is not None:
+        st.sidebar.caption(f"ChromaDB total chunks: {store._collection.count()}")
 
     st.sidebar.info("Upload .pdf or .md files to populate the corpus.")
 
@@ -242,23 +254,27 @@ def render_chat_interface(graph) -> None:
                 if message.get("no_context_found"):
                     st.warning("⚠️ No relevant content found in corpus.")
 
-    # Chat input
-    # TODO: implement
-    # 1. query = st.chat_input("Ask about a deep learning topic...")
-    #
-    # 2. On submit:
-    #    a. Append user message to chat_history
-    #    b. Display user message immediately (st.rerun or direct render)
-    #    c. Build LangGraph input:
-    #       {"messages": [HumanMessage(content=query)]}
-    #    d. config = {"configurable": {"thread_id": st.session_state.thread_id}}
-    #    e. result = graph.invoke(input, config=config)
-    #    f. response = result["final_response"]
-    #    g. Append assistant message with answer, sources, no_context_found flag
-    #
-    # STRETCH GOAL — streaming:
-    # Replace graph.invoke with graph.stream() and use st.write_stream()
-    # to display tokens as they arrive. Significant "wow factor" in Hour 3.
+    query = st.chat_input("Ask about a deep learning topic...")
+
+    if query:
+        st.session_state.chat_history.append({"role": "user", "content": query})
+
+        from langchain_core.messages import HumanMessage
+
+        graph_input = {"messages": [HumanMessage(content=query)]}
+        config = {"configurable": {"thread_id": st.session_state.thread_id}}
+
+        result = graph.invoke(graph_input, config=config)
+        response: AgentResponse = result["final_response"]
+
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": response.answer,
+            "sources": response.sources,
+            "no_context_found": response.no_context_found,
+        })
+
+        st.rerun() 
 
 
 # ---------------------------------------------------------------------------
